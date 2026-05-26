@@ -8,6 +8,7 @@ import com.mathffreitas.integration.repositories.utils.Mock;
 import java.lang.IO;
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -25,7 +26,10 @@ public class Database {
     private final DatabaseSettings settings;
     private History history = new HistoryImpl();
     private Mock mock;
-    private final HashMap<Long, ProductExhibition> products = new HashMap<>();
+    // non thread safe
+    private final HashMap<Long, ProductExhibition> productsLegacy = new HashMap<>();
+    // thread safe -> to use in concurrency
+    private final ConcurrentHashMap<Long, ProductExhibition> products = new ConcurrentHashMap<>();
 
     public Database(DatabaseSettings settings) {
         this.settings = settings;

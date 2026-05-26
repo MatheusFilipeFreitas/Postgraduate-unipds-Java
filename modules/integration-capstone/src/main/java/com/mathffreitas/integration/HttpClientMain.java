@@ -8,7 +8,7 @@ import java.net.http.HttpResponse;
 
 public class HttpClientMain {
     public static void main(String[] args) throws Exception {
-        URI uri = URI.create("http://localhost:8080/output");
+        URI uri = URI.create("http://localhost:8000/output.json");
 
         try (HttpClient client = HttpClient.newHttpClient()) {
             HttpRequest request = HttpRequest.newBuilder(uri).build();

@@ -1,0 +1,15 @@
+Non thread safe:        Thread safe:
+
+ArrayList               CopyOnWriteArrayList
+LinkedList
+
+HashSet                 CopyOnWriteArraySet
+LinkedHashSet           ConcurrentSkipListSet (ordered)
+TreeSet
+
+HashMap                 ConcurrentHashMap
+LinkedHashMap           ConcurrentSkipListMap (ordered)
+TreeMap
+
+IdentityHashMap (exact memory reference)
+WeakHashMap
