@@ -2,7 +2,8 @@ package com.mathffreitas.integration;
 
 import com.google.gson.Gson;
 import com.mathffreitas.integration.models.ProductExhibition;
-import com.mathffreitas.integration.repositories.Database;
+import com.mathffreitas.integration.repositories.InMemoryDatabase;
+import com.mathffreitas.integration.repositories.SqlDatabase;
 import com.mathffreitas.integration.repositories.utils.DatabaseSettings;
 
 import java.io.IOException;
@@ -10,20 +11,30 @@ import java.lang.IO;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.math.BigDecimal;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import java.sql.SQLException;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.stream.Stream;
+
 public class ServerWithSocket {
 
-    private static final Database database = new Database(new DatabaseSettings(false, true));
+    private static final SqlDatabase database;
+
+    static {
+        try {
+            database = new SqlDatabase();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     static void main(String[] args) throws Exception {
-        database.initDatabase();
         try (ExecutorService executor = Executors.newFixedThreadPool(50)) {
             try (ServerSocket serverSocket = new ServerSocket(8000)) {
                 IO.println("Welcome to the server!");
@@ -75,8 +86,9 @@ public class ServerWithSocket {
             PrintStream printStream = new PrintStream(out);
 
             if (method.equals("GET") && uri.equals("/output")) {
-                Path path = Path.of("output.json");
-                String json = Files.readString(path);
+//                Path path = Path.of("output.json");
+//                String json = Files.readString(path);
+                String json = new Gson().toJson(database.getProducts());
 
                 displayOkResponse(printStream, json);
             } else
@@ -97,12 +109,41 @@ public class ServerWithSocket {
                 database.addProduct(product);
 
                 printStream.println("HTTP/1.1 201 Created");
+            } else
+
+            if (method.equals("GET") && uri.matches("/output/\\d+")) {
+                Long id = getIdFromUri(uri);
+                Optional<ProductExhibition> product = database.getProductById(id);
+                if (product.isEmpty()) {
+                    printStream.println("HTTP/1.1 404 Not Found");
+                } else {
+                    String json = new Gson().toJson(product.get());
+                    displayOkResponse(printStream, json);
+                }
+            }
+
+            if (method.equals("PATCH") && uri.matches("/output/\\d+")) {
+                Long id = getIdFromUri(uri);
+                Optional<ProductExhibition> product = database.getProductById(id);
+                if (product.isEmpty()) {
+                    printStream.println("HTTP/1.1 404 Not Found");
+                } else {
+                    String body =  requestChunks[1];
+                    BigDecimal price = new BigDecimal(new Gson().fromJson(body, String.class));
+                    database.updateProductPriceById(id, price);
+                    displayOkResponse(printStream, "");
+                }
             }
 
             else {
                 printStream.println("HTTP/1.1 404 Not Found");
             }
         }
+    }
+
+    private static Long getIdFromUri(String uri) {
+        String idText = uri.substring("/output/".length());
+        return Long.parseLong(idText);
     }
 
     private static void displayOkResponse(PrintStream printStream, String response) {
