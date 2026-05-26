@@ -59,89 +59,145 @@ public class ServerWithSocket {
 
     private static void handleRequests(Socket clientSocket) throws IOException, InterruptedException {
         try (clientSocket) {
-            InputStream in = clientSocket.getInputStream();
-            StringBuilder stringBuilder = new StringBuilder();
-
-            int data;
-            do {
-                data = in.read();
-                stringBuilder.append((char) data);
-            } while (in.available() > 0);
-
-            String request = stringBuilder.toString();
+            String request = readRequest(clientSocket);
             logger.finest(() -> request);
 
             Thread.sleep(250);
 
             String[] requestChunks = request.split("\r\n\r\n");
-            String requestLineAndHeaders = requestChunks[0];
-            String[] requestLineAndHeadersChunks = requestLineAndHeaders.split("\r\n");
-            String requestLine = requestLineAndHeadersChunks[0];
-            String[] requestLineChunks = requestLine.split(" ");
+            String[] requestLineChunks = requestChunks[0]
+                    .split("\r\n")[0]
+                    .split(" ");
 
             String method = requestLineChunks[0];
             String uri = requestLineChunks[1];
 
             logger.finer(() -> "Method: " + method);
-            logger.finer(() ->"Path: " + uri);
+            logger.finer(() -> "Path: " + uri);
 
-            OutputStream out = clientSocket.getOutputStream();
-            PrintStream printStream = new PrintStream(out);
+            PrintStream printStream = new PrintStream(clientSocket.getOutputStream());
 
-            if (method.equals("GET") && uri.equals("/output")) {
-//                Path path = Path.of("output.json");
-//                String json = Files.readString(path);
-                String json = new Gson().toJson(database.getProducts());
-
-                displayOkResponse(printStream, json);
-            } else
-
-            if (method.equals("GET") && uri.equals("/output/total")) {
-                int total = database.getSizeOfProducts();
-                displayOkResponse(printStream, ("" + total));
-            } else
-
-            if (method.equals("POST") && uri.equals("/output")) {
-                if (requestChunks.length == 1) {
-                    printStream.println("HTTP/1.1 400 Bad Request");
-                    return;
-                }
-
-                String body =  requestChunks[1];
-                ProductExhibition product = new Gson().fromJson(body, ProductExhibition.class);
-                database.addProduct(product);
-
-                printStream.println("HTTP/1.1 201 Created");
-            } else
-
-            if (method.equals("GET") && uri.matches("/output/\\d+")) {
-                Long id = getIdFromUri(uri);
-                Optional<ProductExhibition> product = database.getProductById(id);
-                if (product.isEmpty()) {
-                    printStream.println("HTTP/1.1 404 Not Found");
-                } else {
-                    String json = new Gson().toJson(product.get());
-                    displayOkResponse(printStream, json);
-                }
-            }
-
-            if (method.equals("PATCH") && uri.matches("/output/\\d+")) {
-                Long id = getIdFromUri(uri);
-                Optional<ProductExhibition> product = database.getProductById(id);
-                if (product.isEmpty()) {
-                    printStream.println("HTTP/1.1 404 Not Found");
-                } else {
-                    String body =  requestChunks[1];
-                    BigDecimal price = new BigDecimal(new Gson().fromJson(body, String.class));
-                    database.updateProductPriceById(id, price);
-                    displayOkResponse(printStream, "");
-                }
-            }
-
-            else {
-                printStream.println("HTTP/1.1 404 Not Found");
-            }
+            routeRequest(method, uri, requestChunks, printStream);
         }
+    }
+
+    private static String readRequest(Socket clientSocket) throws IOException {
+        InputStream in = clientSocket.getInputStream();
+        StringBuilder builder = new StringBuilder();
+
+        int data;
+        do {
+            data = in.read();
+            builder.append((char) data);
+        } while (in.available() > 0);
+
+        return builder.toString();
+    }
+
+    private static void routeRequest(
+            String method,
+            String uri,
+            String[] requestChunks,
+            PrintStream printStream
+    ) {
+        if (method.equals("GET") && uri.equals("/output")) {
+            handleGetProducts(printStream);
+            return;
+        }
+
+        if (method.equals("GET") && uri.equals("/output/total")) {
+            handleGetTotal(printStream);
+            return;
+        }
+
+        if (method.equals("POST") && uri.equals("/output")) {
+            handleCreateProduct(requestChunks, printStream);
+            return;
+        }
+
+        if (method.equals("GET") && uri.matches("/output/\\d+")) {
+            handleGetProductById(uri, printStream);
+            return;
+        }
+
+        if (method.equals("PATCH") && uri.matches("/output/\\d+")) {
+            handlePatchProduct(uri, requestChunks, printStream);
+            return;
+        }
+
+        printStream.print("HTTP/1.1 404 Not Found\r\n");
+    }
+
+    private static void handleGetProducts(PrintStream printStream) {
+        String json = new Gson().toJson(database.getProducts());
+        displayOkResponse(printStream, json);
+    }
+
+    private static void handleGetTotal(PrintStream printStream) {
+        int total = database.getSizeOfProducts();
+        displayOkResponse(printStream, String.valueOf(total));
+    }
+
+    private static void handleCreateProduct(
+            String[] requestChunks,
+            PrintStream printStream
+    ) {
+        if (requestChunks.length == 1) {
+            printStream.print("HTTP/1.1 400 Bad Request\r\n");
+            return;
+        }
+
+        String body = requestChunks[1];
+
+        ProductExhibition product =
+                new Gson().fromJson(body, ProductExhibition.class);
+
+        database.addProduct(product);
+
+        printStream.print("HTTP/1.1 201 Created\r\n");
+    }
+
+    private static void handleGetProductById(
+            String uri,
+            PrintStream printStream
+    ) {
+        Long id = getIdFromUri(uri);
+
+        Optional<ProductExhibition> product =
+                database.getProductById(id);
+
+        if (product.isEmpty()) {
+            printStream.print("HTTP/1.1 404 Not Found\r\n");
+            return;
+        }
+
+        String json = new Gson().toJson(product.get());
+        displayOkResponse(printStream, json);
+    }
+
+    private static void handlePatchProduct(
+            String uri,
+            String[] requestChunks,
+            PrintStream printStream
+    ) {
+        Long id = getIdFromUri(uri);
+
+        Optional<ProductExhibition> product =
+                database.getProductById(id);
+
+        if (product.isEmpty()) {
+            printStream.print("HTTP/1.1 404 Not Found\r\n");
+            return;
+        }
+
+        String body = requestChunks[1];
+
+        BigDecimal price =
+                new BigDecimal(new Gson().fromJson(body, String.class));
+
+        database.updateProductPriceById(id, price);
+
+        displayOkResponse(printStream, "");
     }
 
     private static Long getIdFromUri(String uri) {
@@ -150,9 +206,9 @@ public class ServerWithSocket {
     }
 
     private static void displayOkResponse(PrintStream printStream, String response) {
-        printStream.println("HTTP/1.1 200 OK");
-        printStream.println("Content-Type: application/json; charset=utf-8");
-        printStream.println();
-        printStream.println(response);
+        printStream.print("HTTP/1.1 200 OK\r\n");
+        printStream.print("Content-Type: application/json; charset=utf-8\r\n\r\n");
+        printStream.print(response);
+        printStream.println("\r\n");
     }
 }
