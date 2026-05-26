@@ -21,9 +21,11 @@ import java.sql.SQLException;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ServerWithSocket {
-
+    private static final Logger logger = Logger.getLogger(ServerWithSocket.class.getName());
     private static final SqlDatabase database;
 
     static {
@@ -37,7 +39,7 @@ public class ServerWithSocket {
     static void main(String[] args) throws Exception {
         try (ExecutorService executor = Executors.newFixedThreadPool(50)) {
             try (ServerSocket serverSocket = new ServerSocket(8000)) {
-                IO.println("Welcome to the server!");
+                logger.info(() -> "Welcome to the server!");
 
                 while (true) {
                     Socket clientSocket = serverSocket.accept();
@@ -45,6 +47,8 @@ public class ServerWithSocket {
                         try {
                             handleRequests(clientSocket);
                         } catch (Exception e) {
+//                            logger.severe(() -> e.getMessage());
+                            logger.log(Level.SEVERE, e.getMessage(), e);
                             throw new RuntimeException(e);
                         }
                     });
@@ -65,7 +69,7 @@ public class ServerWithSocket {
             } while (in.available() > 0);
 
             String request = stringBuilder.toString();
-            IO.println(request);
+            logger.finest(() -> request);
 
             Thread.sleep(250);
 
@@ -78,9 +82,8 @@ public class ServerWithSocket {
             String method = requestLineChunks[0];
             String uri = requestLineChunks[1];
 
-            IO.println("Called:");
-            IO.println("Method: " + method);
-            IO.println("Path: " + uri);
+            logger.finer(() -> "Method: " + method);
+            logger.finer(() ->"Path: " + uri);
 
             OutputStream out = clientSocket.getOutputStream();
             PrintStream printStream = new PrintStream(out);
