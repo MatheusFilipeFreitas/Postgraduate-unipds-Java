@@ -1,8 +1,13 @@
 package com.mathffreitas.integration.models;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.math.BigDecimal;
 
-public class Pix {
+public class Pix implements Serializable {
+    @Serial
+    private static final long serialVersionUID = 1L; // indicates serializer version
+
     private Long id;
     private BigDecimal price;
     private String destinyKey;

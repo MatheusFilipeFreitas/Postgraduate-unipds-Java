@@ -6,18 +6,18 @@ import com.mathffreitas.integration.repositories.InMemoryDatabase;
 import com.mathffreitas.integration.repositories.SqlDatabase;
 import com.mathffreitas.integration.repositories.utils.DatabaseSettings;
 
-import java.io.IOException;
+import java.io.*;
 import java.lang.IO;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.PrintStream;
 import java.math.BigDecimal;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 import java.sql.SQLException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -71,9 +71,11 @@ public class ServerWithSocket {
 
             String method = requestLineChunks[0];
             String uri = requestLineChunks[1];
+            String httpVersion = requestLineChunks[2];
 
             logger.finer(() -> "Method: " + method);
             logger.finer(() -> "Path: " + uri);
+            logger.finer(() -> "HTTP Version: " + httpVersion);
 
             PrintStream printStream = new PrintStream(clientSocket.getOutputStream());
 
@@ -94,14 +96,35 @@ public class ServerWithSocket {
         return builder.toString();
     }
 
+    private static String handleMediaType(String[] requestChunks) {
+        String[] headers = requestChunks[0].split("\r\n");
+
+        for (int i = 1; i < headers.length; i++) {
+            String header = headers[i];
+
+            logger.info("Header: " + header);
+
+            if (header.toLowerCase().startsWith("accept:")) {
+                String mediaType = header.substring("Accept:".length()).trim();
+
+                logger.info("Accept: " + mediaType);
+
+                return mediaType;
+            }
+        }
+
+        return "application/json";
+    }
+
     private static void routeRequest(
             String method,
             String uri,
             String[] requestChunks,
             PrintStream printStream
-    ) {
+    ) throws IOException {
+        String mediaType = handleMediaType(requestChunks);
         if (method.equals("GET") && uri.equals("/output")) {
-            handleGetProducts(printStream);
+            handleGetProducts(printStream, mediaType);
             return;
         }
 
@@ -128,12 +151,23 @@ public class ServerWithSocket {
         printStream.print("HTTP/1.1 404 Not Found\r\n");
     }
 
-    private static void handleGetProducts(PrintStream printStream) {
-        String json = new Gson().toJson(database.getProducts());
-        displayOkResponse(printStream, json);
+    private static void handleGetProducts(PrintStream printStream, String mediaType) throws IOException {
+        byte[] body;
+        List<ProductExhibition> products = database.getProducts();
+        if ("application/x-java-serialized-object".equals(mediaType)) {
+            var bos = new ByteArrayOutputStream();
+            var oos = new ObjectOutputStream(bos);
+            oos.writeObject(products);
+            body = bos.toByteArray();
+        } else {
+            String json = new Gson().toJson(products.toArray());
+            body = json.getBytes(StandardCharsets.UTF_8);
+        }
+
+        displayOkResponse(printStream, body, mediaType);
     }
 
-    private static void handleGetTotal(PrintStream printStream) {
+    private static void handleGetTotal(PrintStream printStream) throws IOException {
         int total = database.getSizeOfProducts();
         displayOkResponse(printStream, String.valueOf(total));
     }
@@ -160,7 +194,7 @@ public class ServerWithSocket {
     private static void handleGetProductById(
             String uri,
             PrintStream printStream
-    ) {
+    ) throws IOException {
         Long id = getIdFromUri(uri);
 
         Optional<ProductExhibition> product =
@@ -179,7 +213,7 @@ public class ServerWithSocket {
             String uri,
             String[] requestChunks,
             PrintStream printStream
-    ) {
+    ) throws IOException {
         Long id = getIdFromUri(uri);
 
         Optional<ProductExhibition> product =
@@ -205,10 +239,17 @@ public class ServerWithSocket {
         return Long.parseLong(idText);
     }
 
-    private static void displayOkResponse(PrintStream printStream, String response) {
-        printStream.print("HTTP/1.1 200 OK\r\n");
-        printStream.print("Content-Type: application/json; charset=utf-8\r\n\r\n");
-        printStream.print(response);
-        printStream.println("\r\n");
+    private static void displayOkResponse(PrintStream printStream, String response) throws IOException {
+        printStream.write("HTTP/1.1 200 OK\r\n".getBytes(StandardCharsets.UTF_8));
+        printStream.write("Content-Type: application/json; charset=utf-8\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        printStream.write(response.getBytes(StandardCharsets.UTF_8));
+        printStream.write("\r\n".getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void displayOkResponse(PrintStream printStream, byte[] response, String mediaType) throws IOException {
+        printStream.write("HTTP/1.1 200 OK\r\n".getBytes(StandardCharsets.UTF_8));
+        printStream.write(("Content-Type: " + mediaType + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        printStream.write(response);
+        printStream.write("\r\n".getBytes(StandardCharsets.UTF_8));
     }
 }
